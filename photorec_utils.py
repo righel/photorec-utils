@@ -3,8 +3,13 @@
 import argparse 
 import os
 import os.path
+from shutil import copyfile
+import cv2
 import exifread
 from termcolor import colored
+import colorama
+import numpy as np
+from matplotlib import pyplot as plt
 
 # Parse arguments pretty
 parser = argparse.ArgumentParser(description='photorec post-recover utils.')
@@ -30,6 +35,9 @@ group.add_argument('-m', '--match', dest='match', help='Match substring in filen
 
 args = parser.parse_args()
 
+# Init term colors
+colorama.init()
+
 # Banner
 print(colored("photorec post-recover utils.\n", attrs=['bold']))
 
@@ -39,6 +47,46 @@ def error(err):
 
 def warning(err):
     print(colored("[WARN] ", "yellow") + err)
+
+def histogram(filename):
+    print(filename)
+    img = cv2.imread(filename, 0)
+    ravel = img.ravel()
+    # print(ravel)
+    
+    size = np.shape(img) 
+    
+    non_zeros = np.count_nonzero(img)
+    total_pixels = float(size[0] * size[1])
+    zeros = float(total_pixels - non_zeros)
+    zeros_ratio = zeros / total_pixels
+    print(zeros_ratio)
+
+    plt.hist(ravel, 256, [0,256])
+    plt.show()
+
+    # color = ('b','g','r')
+    # for i,col in enumerate(color):
+    #     histr = cv2.calcHist([img],[i],None,[256],[0,256])
+    #     plt.plot(histr,color = col)
+    #     plt.xlim([0,256])
+    # plt.show()
+
+def blackness(filename, verbose):
+    img = cv2.imread(filename, 0)
+
+    size = np.shape(img) 
+    
+    non_zeros = np.count_nonzero(img)
+    total_pixels = float(size[0] * size[1])
+    zeros = float(total_pixels - non_zeros)
+    zeros_ratio = zeros / total_pixels
+    print(zeros_ratio)
+
+    if(verbose):
+        print("blackness: {0:.2f}".format(zeros_ratio))
+
+    return zeros_ratio
 
 def sizeof_fmt(num, suffix='B'):
     for unit in ['', 'k', 'm', 'g', 't', 'p', 'Ei', 'Zi']:
@@ -58,8 +106,7 @@ def scan_dir(folder):
 def find_files(folders, match, regex, verbose, min_size, max_size):
 
     for folder in folders:
-        print('searching for files in:')
-        print(colored(folder, attrs=['bold']))
+        print('searching for files in ' + colored(folder, attrs=['bold']))
         
         if(not os.path.exists(folder)):
             error(folder + ' is not a valid directory.')
@@ -74,8 +121,13 @@ def find_files(folders, match, regex, verbose, min_size, max_size):
         print("searching by text match " + colored("%" + match + "%", attrs=['bold']))
         for root, dirs, files in os.walk(folder, topdown=False):
             for file in files:
+
+                full_filename = folder + "/" + file
                 if(match is not None):
-                    file_info = os.stat(folder + file)
+                    try:
+                        file_info = os.stat(full_filename)
+                    except:
+                        warning("couldn't get file info for: " + file)
                     
                     # Check substring match
                     if match in file:
@@ -89,11 +141,20 @@ def find_files(folders, match, regex, verbose, min_size, max_size):
                             # Get file extension
                             filename, file_extension = os.path.splitext(file)
 
+                            # Calculate histogram
+                            # print(full_filename)
+                            #histogram(full_filename)
+
+                            # Blackness of the image
+                            if(blackness(full_filename, verbose) > 0.65):
+                                copyfile(full_filename, folder + "/filtered/" + file)
+
                             # Get exif data if its an image
                             try: 
-                                if(file_extension in [".png", ".jpg"]):
+                                if(lower(file_extension) in [".png", ".jpg"]):
                                     exif_tags = exifread.process_file(file, details=True)
-                                    print(exif_tags)
+                                    if(verbose):
+                                        print(exif_tags)
                             except:
                                 if(verbose):
                                     warning("invalid exif tags for " + file)
