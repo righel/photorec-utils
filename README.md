@@ -8,5 +8,6 @@ activate opencv_27
 conda install numpy
 pip install exifread
 pip install termcolor
+pip install colorama
 conda install --channel https://conda.anaconda.org/menpo opencv3
 ```
