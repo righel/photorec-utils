@@ -24,11 +24,6 @@ parser.add_argument('-ms','--min_size', dest='min_size', help='Match files with 
 parser.add_argument('-Ms','--max_size', dest='max_size', help='Match files with size lower or equal than this value.')
 parser.add_argument('-o','--output', dest='output', help='Output folder for copying results.')
 
-# Modes
-group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument('-f', '--find', dest='find', help='Find specific files.', action='store_true')
-group.add_argument('-s', '--sort', dest='sort', help='Sort files.', action='store_true')
-
 # Search modes
 group = parser.add_mutually_exclusive_group()
 group.add_argument('-re', '--regex', dest='regex', help='Regex pattern for matching filenames.')
@@ -98,6 +93,7 @@ def sizeof_fmt(num, suffix='B'):
     return "%.1f %s%s" % (num, 'Yi', suffix)
 
 def find_files(dir, match, regex, verbose, min_size, max_size):
+    matched = 0
 
     print('searching for files in ' + colored(dir, attrs=['bold']))
     
@@ -122,7 +118,6 @@ def find_files(dir, match, regex, verbose, min_size, max_size):
                     if match in file:
                     
                         try:
-                            print(full_filename)
                             file_info = os.stat(full_filename)
                         except:
                             warning("couldn't get file info for: " + file)
@@ -131,7 +126,6 @@ def find_files(dir, match, regex, verbose, min_size, max_size):
 
                         # Check size filters
                         if((min_size is None or file_info.st_size >= eval(min_size)) and (max_size is None or file_info.st_size <= eval(max_size))):
-
 
                             # Get file extension
                             filename, file_extension = os.path.splitext(file)
@@ -146,15 +140,18 @@ def find_files(dir, match, regex, verbose, min_size, max_size):
                                 if(verbose):
                                     warning("invalid exif tags for " + file)
 
-                            # Blackness of the image
-                            try:
-                                if(file_extension.lower() in IMAGE_EXTENSIONS):
-                                    if(blackness(full_filename, verbose) < 0.65):
-                                        continue
-                            except:
-                                error("Couldn't compute blackness for " + file)
-                                continue
+                            # Check image filters
+                            # # Blackness of the image
+                            # try:
+                            #     if(file_extension.lower() in IMAGE_EXTENSIONS):
+                            #         if(blackness(full_filename, verbose) < 0.65):
+                            #             continue
+                            # except:
+                            #     error("Couldn't compute blackness for " + file)
+                            #     continue
+
                             # If all matches, print found filename
+                            matched = matched + 1
                             print('{:s} [{:s}]'.format(file, sizeof_fmt(file_info.st_size)))
                             
                             # Copy file if output dir is present
@@ -172,16 +169,20 @@ def find_files(dir, match, regex, verbose, min_size, max_size):
                 # Search by regex
                 if regex is not None:
                     pass
+            
+            # Print matched files
+            print("\n" + colored("Matched files: {:d}".format(matched), attrs=['bold']))
+            
             # Recursive walk inside paths
             if subdirs is not None and args.recursive:
                 for subdir in subdirs:
                     if(os.path.isdir(subdir)):
                         find_files(subdir, match, regex, verbose, min_size, max_size)
+            
 
     # Search by regex pattern
     if(regex is not None):
         print("searching by regex match ")
 
-if(args.find):
-    for dir in args.dirs:
-        find_files(dir=dir, match=args.match, regex=args.regex, verbose=args.verbose, min_size=args.min_size, max_size=args.max_size)
+for dir in args.dirs:
+    find_files(dir=dir, match=args.match, regex=args.regex, verbose=args.verbose, min_size=args.min_size, max_size=args.max_size)
