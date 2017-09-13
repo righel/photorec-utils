@@ -17,7 +17,9 @@ parser = argparse.ArgumentParser(description='photorec post-recover utils.')
 # Required parameters
 parser.add_argument('dirs', metavar='dir', type=str, nargs='+', help='Source dirs.')
 
+
 # Optional parameters
+parser.add_argument('-f', '--filters', dest='filters', type=str, nargs='+', help='Filters to apply to the images.')
 parser.add_argument('-r','--recursive', dest='recursive', help='Perform a recursive search inside directories.', action='store_true')
 parser.add_argument('-v','--verbose', dest='verbose', help='Verbose output.', action='store_true')
 parser.add_argument('-ms','--min_size', dest='min_size', help='Match files with size greater or equal than this value.')
@@ -30,6 +32,12 @@ group.add_argument('-re', '--regex', dest='regex', help='Regex pattern for match
 group.add_argument('-m', '--match', dest='match', help='Match substring in filenames.')
 
 args = parser.parse_args()
+
+
+# Set verbosity
+verbose = False
+if(args.verbose):
+    verbose = True
 
 # Init term colors
 colorama.init()
@@ -70,20 +78,27 @@ def histogram(filename):
     #     plt.xlim([0,256])
     # plt.show()
 
-def blackness(filename, verbose):
-    img = cv2.imread(filename, 0)
+def blackness(filename):
+    global verbose
 
-    size = np.shape(img) 
-    
-    non_zeros = np.count_nonzero(img)
-    total_pixels = float(size[0] * size[1])
-    zeros = float(total_pixels - non_zeros)
-    zeros_ratio = zeros / total_pixels
+    try:
+        img = cv2.imread(filename, 0)
+        size = np.shape(img) 
+        
+        non_zeros = np.count_nonzero(img)
+        total_pixels = float(size[0] * size[1])
+        zeros = float(total_pixels - non_zeros)
+        zeros_ratio = zeros / total_pixels
 
-    if(verbose):
-        print("blackness: {0:.2f}".format(zeros_ratio))
-
-    return zeros_ratio
+        if(verbose):
+            print("blackness: {0:.2f}".format(zeros_ratio))
+        
+        if(zeros_ratio > 0.5):
+            return True
+        else:
+            return False
+    except:
+        return False    
 
 def sizeof_fmt(num, suffix='B'):
     for unit in ['', 'k', 'm', 'g', 't', 'p', 'Ei', 'Zi']:
@@ -92,7 +107,8 @@ def sizeof_fmt(num, suffix='B'):
         num /= 1024.0
     return "%.1f %s%s" % (num, 'Yi', suffix)
 
-def find_files(dir, match, regex, verbose, min_size, max_size):
+def find_files(dir, match, regex, min_size, max_size):
+    global verbose
     matched = 0
 
     print('searching for files in ' + colored(dir, attrs=['bold']))
@@ -108,10 +124,11 @@ def find_files(dir, match, regex, verbose, min_size, max_size):
     # Search by substring text match
     if(match is not None):
         print("searching by text match " + colored("%" + match + "%", attrs=['bold']))
-        for root, subdirs, files in os.walk(dir, topdown=False):
-            
-            for file in files:
-                full_filename = os.path.join(root, file)
+        for file in os.listdir(dir):
+
+            full_filename = os.path.join(dir, file)
+
+            if(os.path.isfile(full_filename)):  
                 if(match is not None):
 
                     # Check substring match
@@ -141,14 +158,18 @@ def find_files(dir, match, regex, verbose, min_size, max_size):
                                     warning("invalid exif tags for " + file)
 
                             # Check image filters
-                            # # Blackness of the image
-                            # try:
-                            #     if(file_extension.lower() in IMAGE_EXTENSIONS):
-                            #         if(blackness(full_filename, verbose) < 0.65):
-                            #             continue
-                            # except:
-                            #     error("Couldn't compute blackness for " + file)
-                            #     continue
+                            if(len(args.filters) > 0):
+                                # results = [ globals()[filter](full_filename) for filter in args.filters ]
+                                # print(results)
+                                pass_filter = True
+                                for filter in args.filters:
+                                    if(not globals()[filter](full_filename)):
+                                        pass_filter = False
+                                        break
+
+                                if not pass_filter:
+                                    # Skip file if it doesn't match
+                                    continue
 
                             # If all matches, print found filename
                             matched = matched + 1
@@ -164,25 +185,29 @@ def find_files(dir, match, regex, verbose, min_size, max_size):
 
                                 # Copy file
                                 dst_file = os.path.join(dst_dir, file)
-                                copyfile(full_filename, dst_file)
-
+                                if(not os.path.isfile(dst_file) and args):
+                                    if(verbose):
+                                        warning("File already exists. Skipping.")
+                                    try:
+                                        copyfile(full_filename, dst_file)
+                                    except:
+                                        error("Coulnd't copy file.")
                 # Search by regex
                 if regex is not None:
                     pass
+            else:
+
+                # Recursive walk inside paths
+                if os.path.isdir(full_filename) and args.recursive:
+                    find_files(full_filename, match, regex, min_size, max_size)
             
-            # Print matched files
-            print("\n" + colored("Matched files: {:d}".format(matched), attrs=['bold']))
-            
-            # Recursive walk inside paths
-            if subdirs is not None and args.recursive:
-                for subdir in subdirs:
-                    if(os.path.isdir(subdir)):
-                        find_files(subdir, match, regex, verbose, min_size, max_size)
-            
+        # Print matched files
+        print("\n" + colored("Matched files: {:d}".format(matched), attrs=['bold']))
+        
 
     # Search by regex pattern
     if(regex is not None):
         print("searching by regex match ")
 
 for dir in args.dirs:
-    find_files(dir=dir, match=args.match, regex=args.regex, verbose=args.verbose, min_size=args.min_size, max_size=args.max_size)
+    find_files(dir=dir, match=args.match, regex=args.regex, min_size=args.min_size, max_size=args.max_size)
